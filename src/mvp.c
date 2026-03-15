@@ -244,7 +244,6 @@ static void progress_set_label(progress_bar *progress, const char *path) {
 static void progress_draw(progress_bar *progress, bool force) {
     struct timespec now;
     struct winsize ws;
-    int width = 28;
     double ratio;
     int percent;
     char copied_text[32];
@@ -252,6 +251,10 @@ static void progress_draw(progress_bar *progress, bool force) {
     char line[512];
     char bar[64];
     int terminal_cols = 80;
+    const char *label;
+    int label_width;
+    int suffix_width;
+    int width;
 
     if (progress == NULL || !progress->enabled) {
         return;
@@ -265,13 +268,6 @@ static void progress_draw(progress_bar *progress, bool force) {
 
     if (ioctl(STDERR_FILENO, TIOCGWINSZ, &ws) == 0 && ws.ws_col > 0) {
         terminal_cols = ws.ws_col;
-    }
-
-    if (terminal_cols > 60) {
-        width = terminal_cols - 42;
-        if (width > 40) {
-            width = 40;
-        }
     }
 
     ratio = progress->total_bytes > 0
@@ -288,19 +284,60 @@ static void progress_draw(progress_bar *progress, bool force) {
     format_bytes(progress->copied_bytes, copied_text, sizeof(copied_text));
     format_bytes(progress->total_bytes, total_text, sizeof(total_text));
 
+    label = progress->label[0] != '\0' ? progress->label : "moving";
+    label_width = (int)strlen(label);
+    if (label_width > 18) {
+        label_width = 18;
+    }
+
+    suffix_width = snprintf(NULL, 0, " %3d%% %s/%s", percent, copied_text, total_text);
+    width = terminal_cols - label_width - suffix_width - 4;
+    if (width > 40) {
+        width = 40;
+    }
+
+    while (width < 10 && label_width > 0) {
+        label_width--;
+        width = terminal_cols - label_width - suffix_width - 4;
+        if (width > 40) {
+            width = 40;
+        }
+    }
+
+    if (width < 10) {
+        width = 10;
+    }
+    if (width > (int)sizeof(bar) - 1) {
+        width = (int)sizeof(bar) - 1;
+    }
+
     for (int i = 0; i < width; i++) {
         bar[i] = i < (int)(ratio * width) ? '#' : '-';
     }
     bar[width] = '\0';
 
-    snprintf(line, sizeof(line), "\r%-18.18s [%s] %3d%% %s/%s",
-             progress->label[0] != '\0' ? progress->label : "moving",
-             bar,
-             percent,
-             copied_text,
-             total_text);
+    if (label_width > 0) {
+        snprintf(line, sizeof(line), "%-*.*s [%s] %3d%% %s/%s",
+                 label_width,
+                 label_width,
+                 label,
+                 bar,
+                 percent,
+                 copied_text,
+                 total_text);
+    } else {
+        snprintf(line, sizeof(line), "[%s] %3d%% %s/%s",
+                 bar,
+                 percent,
+                 copied_text,
+                 total_text);
+    }
 
-    fprintf(stderr, "%-*s", terminal_cols - 1, line);
+    if ((int)strlen(line) > terminal_cols - 1 && terminal_cols > 1) {
+        line[terminal_cols - 1] = '\0';
+    }
+
+    fprintf(stderr, "\r\033[2K%s", line);
     fflush(stderr);
     progress->line_open = true;
 }
