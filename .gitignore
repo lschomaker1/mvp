@@ -1,0 +1,6 @@
+mvp
+*.o
+*.swp
+*.tmp
+.mvp-test.*
+.verify.*
